@@ -209,6 +209,67 @@ class GW(lib.StreamObject):
             eta = self.eta
         return get_g(omega, self.mo_energy, self.mo_occ, eta)
 
+    def get_sigma_element(self, omega, p, q, td_e=None, td_xy=None, eta=None, vir_sgn=1):
+        if td_e is None:
+            td_e = self._tdscf.e
+        if td_xy is None:
+            td_xy = self._tdscf.xy
+        if eta is None:
+            eta = self.eta
+
+        nmo = self.nmo
+        nocc = self.nocc
+        nvir = nmo - nocc
+        nexc = len(td_e) 
+        eris = self.ao2mo(mo_coeff=self._scf.mo_coeff)
+        # factor of 2 for normalization, see tddft/rhf.py 
+        td_xy = 2*np.asarray(td_xy) # (nexc, 2, nvir, nocc)
+        td_z = np.sum(td_xy, axis=1).reshape(nexc,nvir,nocc)
+        tdm_oo = einsum('vai,iapq->vpq', td_z, eris.ovoo)
+        tdm_ov = einsum('vai,iapq->vpq', td_z, eris.ovov)
+        tdm_vv = einsum('vai,iapq->vpq', td_z, eris.ovvv)
+        tdm = []
+        for oo,ov,vv in zip(tdm_oo,tdm_ov,tdm_vv):
+            tdm.append(np.array(np.bmat([[oo, ov],[ov.T, vv]])))
+        tdm = np.asarray(tdm)
+        tdm_p = tdm[:,:,p]
+        tdm_q = tdm[:,:,q]
+
+        return get_sigma_element(self, omega, tdm_p, tdm_q, td_e, eta=eta, vir_sgn=vir_sgn)
+
+    def get_sigma(self, omega, td_e=None, td_xy=None, eta=None, vir_sgn=1):
+        if td_e is None:
+            td_e = self._tdscf.e
+        if td_xy is None:
+            td_xy = self._tdscf.xy
+        if eta is None:
+            eta = self.eta
+        
+        nmo = self.nmo
+        nocc = self.nocc
+        nvir = nmo - nocc
+        nexc = len(td_e)
+        eris = self.ao2mo(mo_coeff=self._scf.mo_coeff)
+        # factor of 2 for normalization, see tddft/rhf.py 
+        td_xy = 2*np.asarray(td_xy) # (nexc, 2, nvir, nocc)
+        td_z = np.sum(td_xy, axis=1).reshape(nexc,nvir,nocc)
+        tdm_oo = einsum('vai,iapq->vpq', td_z, eris.ovoo)
+        tdm_ov = einsum('vai,iapq->vpq', td_z, eris.ovov)
+        tdm_vv = einsum('vai,iapq->vpq', td_z, eris.ovvv)
+        tdm = []
+        for oo,ov,vv in zip(tdm_oo,tdm_ov,tdm_vv):
+            tdm.append(np.array(np.bmat([[oo, ov],[ov.T, vv]])))
+        tdm = np.asarray(tdm)
+        
+        sigma = np.zeros((nmo,nmo))
+        for p in range(nmo):
+            for q in range(nmo):
+                tdm_p = tdm[:,:,p]
+                tdm_q = tdm[:,:,q]
+                sigma[p,q] = get_sigma_element(self, omega, tdm_p, tdm_q, td_e, eta=eta, vir_sgn=vir_sgn)
+        
+        return sigma
+
     def kernel(self, mo_energy=None, mo_coeff=None, td_e=None, td_xy=None,
                eris=None, orbs=None):
         if mo_coeff is None:
@@ -330,14 +391,14 @@ class _ERIS:
 if __name__ == '__main__':
     from pyscf import gto, dft, tddft
     mol = gto.Mole()
-    mol.verbose = 5
+    mol.verbose = 3
     mol.atom = [
         [8 , (0. , 0.     , 0.)],
         [1 , (0. , -0.757 , 0.587)],
         [1 , (0. , 0.757  , 0.587)]]
     mol.basis = 'cc-pvdz'
     mol.build()
-
+'''
     mf = dft.RKS(mol)
     mf.xc = 'hf'
     mf.kernel()
@@ -363,4 +424,4 @@ if __name__ == '__main__':
     gw.kernel(orbs=[nocc-1,nocc])
     print(gw.mo_energy[nocc-1] - -0.44684106)
     print(gw.mo_energy[nocc] - 0.17292032)
-
+'''
